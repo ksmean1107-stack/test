@@ -1,6 +1,5 @@
 export default async function handler(req, res) {
   try {
-    // 1. 최신 URL API 사용 (DeprecationWarning 해결)
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers.host;
     const fullUrl = new URL(req.url, `${protocol}://${host}`);
@@ -10,34 +9,21 @@ export default async function handler(req, res) {
       return res.redirect(302, "https://igx.kr/v/1H/ERROR/1");
     }
 
-    const targetUrl = `https://igx.kr/v/1H/SNS/${id}`;
+    // [치트키] igx.kr이 Vercel은 막아도, 전세계에서 쓰는 이미지 프록시 서비스는 못 막습니다.
+    // wsrv.nl이 대신 이미지를 받아 Vercel에게 전달합니다.
+    const targetUrl = `https://wsrv.nl/?url=https://igx.kr/v/1H/SNS/${id}`;
     
-    // 2. 403 에러 해결을 위한 '완벽한 위장' 헤더
-    const imageResp = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8',
-        'Referer': 'https://igx.kr/', // 출처를 본인 서버로 속여 보안 통과
-        'Origin': 'https://igx.kr',
-        'Sec-Fetch-Dest': 'image',
-        'Sec-Fetch-Mode': 'no-cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'Cache-Control': 'no-cache'
-      }
-    });
+    const imageResp = await fetch(targetUrl);
 
     if (!imageResp.ok) {
-      console.error(`[FATAL] Still 403? Status: ${imageResp.status}`);
+      console.error(`[FATAL] Proxy also failed: ${imageResp.status}`);
       return res.redirect(302, "https://igx.kr/v/1H/ERROR/1");
     }
 
-    // 3. 이미지 바이너리 처리
     const arrayBuffer = await imageResp.arrayBuffer();
     const dataUrl = `data:image/png;base64,${Buffer.from(arrayBuffer).toString('base64')}`;
 
-    // 4. 텍스트 처리 및 이스케이프
+    // 텍스트 및 SVG 로직 (동일)
     const esc = (s) => (s || "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     const rawTitle = title.replace(/_/g, " ");
     const rawDate = (date || "").replace(/_/g, " ");
@@ -51,7 +37,6 @@ export default async function handler(req, res) {
     const dTitle = esc(isOver ? rawTitle.substring(0, LIMIT) + "..." : rawTitle);
     const moreLinkX = 38 + (dTitle.length * 26.5); 
 
-    // 5. SVG 조립
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1170 2439" width="1170" height="2439">
       <image href="${dataUrl}" x="0" y="0" width="1170" height="2439" preserveAspectRatio="none" />
