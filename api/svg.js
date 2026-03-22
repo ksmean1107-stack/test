@@ -4,11 +4,11 @@ export default async function handler(req) {
   try {
     const { searchParams } = new URL(req.url);
     const imgParam = searchParams.get('img');
-    const de = (searchParams.get('de') || "STORY").replace(/_/g, ' ');
+    const de = (searchParams.get('de') || "").replace(/_/g, ' ');
     const t1 = (searchParams.get('text1') || "").replace(/_/g, ' ');
     const t2 = (searchParams.get('text2') || "").replace(/_/g, ' ');
 
-    // [고수 로직 1] 폰트 크기 자동 계산 (fitFontSizeByChars)
+    // [고수 원본 로직] terminal.ts의 fitFontSizeByChars 이식
     const fitFontSizeByChars = (text, base, min, ideal) => {
       const len = Math.max(1, [...text].length);
       if (len <= ideal) return base;
@@ -28,28 +28,22 @@ export default async function handler(req) {
 
     const finalImg = await getBase64(imgParam);
 
-    // SVG 구성 요소 생성
+    // 공통 말풍선 렌더러 (그림자 필터 대신 '가짜 그림자' 레이어 사용)
+    const renderBubble = (x, y, text, dur, delay) => {
+      const fontSize = fitFontSizeByChars(text, 48, 26, 10);
+      return `
+      <g transform="translate(${x}, ${y})">
+        <g>
+          <animateTransform attributeName="transform" type="translate" values="0,0; 0,-15; 0,0" dur="${dur}s" begin="${delay}s" repeatCount="indefinite" />
+          <ellipse cx="4" cy="6" rx="200" ry="90" fill="rgba(0,0,0,0.15)" />
+          <ellipse cx="0" cy="0" rx="200" ry="90" fill="white" stroke="black" stroke-width="5" />
+          <text x="0" y="15" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="800" fill="#000">${text}</text>
+        </g>
+      </g>`;
+    };
+
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1024" height="1500" viewBox="0 0 1024 1500" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <style>
-      /* 앱 엔진 호환을 위한 표준 CSS 애니메이션 */
-      @keyframes float {
-        0% { transform: translateY(0px); }
-        50% { transform: translateY(-15px); }
-        100% { transform: translateY(0px); }
-      }
-      .bubble { animation: float 3s ease-in-out infinite; }
-      .bubble-delay { animation: float 3.5s ease-in-out infinite; }
-    </style>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="5" />
-      <feOffset dx="0" dy="4" result="offsetblur" />
-      <feComponentTransfer><feFuncA type="linear" slope="0.3"/></feComponentTransfer>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-
   <rect width="1024" height="1500" fill="#ffffff" />
 
   ${finalImg ? `<image href="${finalImg}" x="50" y="220" width="924" height="1100" preserveAspectRatio="xMidYMid slice" />` : ''}
@@ -57,21 +51,14 @@ export default async function handler(req) {
 
   <text x="512" y="130" text-anchor="middle" font-family="sans-serif" font-size="55" font-weight="900" fill="#000">${de}</text>
 
-  <g class="bubble" style="transform-box: fill-box; transform-origin: center;">
-    <ellipse cx="280" cy="450" rx="200" ry="90" fill="white" stroke="black" stroke-width="5" filter="url(#shadow)" />
-    <text x="280" y="465" text-anchor="middle" font-family="sans-serif" font-size="${fitFontSizeByChars(t1, 48, 28, 10)}" font-weight="800" fill="#000">${t1}</text>
-  </g>
-
-  <g class="bubble-delay" style="transform-box: fill-box; transform-origin: center;">
-    <ellipse cx="740" cy="1150" rx="200" ry="90" fill="white" stroke="black" stroke-width="5" filter="url(#shadow)" />
-    <text x="740" y="1165" text-anchor="middle" font-family="sans-serif" font-size="${fitFontSizeByChars(t2, 48, 28, 10)}" font-weight="800" fill="#000">${t2}</text>
-  </g>
+  ${t1 ? renderBubble(280, 450, t1, 3, 0) : ''}
+  ${t2 ? renderBubble(740, 1150, t2, 3.2, 0.5) : ''}
 </svg>`;
 
     return new Response(svg.trim(), { 
       headers: { 
         'Content-Type': 'image/svg+xml; charset=utf-8',
-        'Cache-Control': 'no-cache, no-store, must-revalidate' // 실시간 반영을 위해 캐시 방지
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       } 
     });
   } catch (e) {
